@@ -1,0 +1,6 @@
+{
+  "name": "CepatSiaga - Emergency Response",
+  "description": "An AI emergency co-pilot that triages your situation, finds the right facility, and guides you step by step in real time. Features Google Maps integration and voice-guided first aid.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
