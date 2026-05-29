@@ -1,19 +1,76 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useMap, Marker, useMapsLibrary } from "@vis.gl/react-google-maps";
+import { useEffect, useState } from "react";
+import { useMap, Marker, InfoWindow, useMapsLibrary } from "@vis.gl/react-google-maps";
 
-const createSVGMarker = (color: string) => ({
-  url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
-      <path d="M16 0 C7.16 0 0 7.16 0 16 C0 28 16 40 16 40 C16 40 32 28 32 16 C32 7.16 24.84 0 16 0Z" 
-            fill="${color}" stroke="white" stroke-width="2"/>
-      <circle cx="16" cy="16" r="6" fill="white"/>
-    </svg>
-  `)}`,
-  scaledSize: new google.maps.Size(32, 40),
-  anchor: new google.maps.Point(16, 40)
-});
+const createSVGMarker = (type: string, isSelected: boolean) => {
+  let bg = "#F97316";
+  let pulseColor = "225, 29, 72";
+  let iconPath = `<circle cx="28" cy="28" r="8" fill="white"/>`;
+  
+  if (type === "hospital") {
+    bg = "#E11D48"; // Rose/Red
+    pulseColor = "225, 29, 72";
+    iconPath = `
+      <rect x="24" y="19" width="8" height="18" fill="white" rx="1.5"/>
+      <rect x="19" y="24" width="18" height="8" fill="white" rx="1.5"/>
+    `;
+  } else if (type === "clinic") {
+    bg = "#0EA5E9"; // Sky
+    pulseColor = "14, 165, 233";
+    iconPath = `
+      <circle cx="28" cy="28" r="10" fill="transparent" stroke="white" stroke-width="3"/>
+      <circle cx="28" cy="28" r="4" fill="white"/>
+    `;
+  } else if (type === "pharmacy") {
+    bg = "#10B981"; // Emerald
+    pulseColor = "16, 185, 129";
+    iconPath = `
+      <rect x="18" y="21" width="20" height="14" rx="7" fill="transparent" stroke="white" stroke-width="3"/>
+      <line x1="18" y1="28" x2="38" y2="28" stroke="white" stroke-width="3"/>
+    `;
+  }
+
+  const s = isSelected ? 1.4 : 1.0;
+  const size = 56 * s;
+  const center = size / 2;
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">
+        <defs>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.3"/>
+          </filter>
+        </defs>
+        <style>
+          @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            60% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes pulseGlow {
+            0% { filter: drop-shadow(0 4px 6px rgba(${pulseColor}, 0.2)); }
+            50% { filter: drop-shadow(0 8px 16px rgba(${pulseColor}, 0.6)); }
+            100% { filter: drop-shadow(0 4px 6px rgba(${pulseColor}, 0.2)); }
+          }
+          .marker-circle {
+            transform-origin: center;
+            animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both, pulseGlow 2s infinite ease-in-out 0.5s;
+          }
+          ${isSelected ? '.marker-circle { animation: none; filter: drop-shadow(0 10px 20px rgba(0,0,0,0.4)); transform: scale(1.05); }' : ''}
+        </style>
+        <g class="marker-circle">
+          <circle cx="28" cy="28" r="20" fill="white" filter="url(#shadow)"/>
+          <circle cx="28" cy="28" r="18.5" fill="${bg}"/>
+          ${iconPath}
+        </g>
+      </svg>
+    `)}`,
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(center, center)
+  };
+};
 
 const createUserSVGMarker = (color: string) => ({
   url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
@@ -26,12 +83,10 @@ const createUserSVGMarker = (color: string) => ({
   anchor: new google.maps.Point(16, 16)
 });
 
-export default function MapView({ userLocation, facilities, selectedFacility, travelMode = "DRIVING", facilityType, isNavigating }: any) {
+export default function MapView({ userLocation, facilities, selectedFacility, setSelectedFacility, travelMode = "DRIVING", facilityType, isNavigating }: any) {
   const map = useMap();
-  const routesLib = useMapsLibrary("routes");
   const coreLib = useMapsLibrary("core");
-  const polylinesRef = useRef<google.maps.Polyline[]>([]);
-  const fallbackLineRef = useRef<google.maps.Polyline | null>(null);
+  const [openInfoWindowId, setOpenInfoWindowId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!map || !userLocation || !coreLib) return;
@@ -51,86 +106,14 @@ export default function MapView({ userLocation, facilities, selectedFacility, tr
         if (f.location) bounds.extend(f.location);
       });
       map.fitBounds(bounds, 50);
+    } else if (selectedFacility && selectedFacility.location) {
+      map.setCenter(selectedFacility.location);
+      map.setZoom(15);
     } else if (!selectedFacility) {
       map.setCenter(userLocation);
       map.setZoom(14);
     }
   }, [map, userLocation, coreLib, facilities, selectedFacility, isNavigating]);
-
-  useEffect(() => {
-    if (!map || !routesLib || !coreLib) return;
-
-    polylinesRef.current.forEach(p => p.setMap(null));
-    polylinesRef.current = [];
-
-    if (!selectedFacility?.location?.lat || !selectedFacility?.location?.lng || !userLocation?.lat || !userLocation?.lng) {
-      if (fallbackLineRef.current) fallbackLineRef.current.setMap(null);
-      return;
-    }
-
-    if (isNavigating) return;
-
-    if (fallbackLineRef.current) fallbackLineRef.current.setMap(null);
-
-    routesLib.Route.computeRoutes({
-      origin: { lat: userLocation.lat, lng: userLocation.lng },
-      destination: { lat: selectedFacility.location.lat, lng: selectedFacility.location.lng },
-      travelMode: travelMode === "TWO_WHEELER" ? "DRIVING" : (travelMode as any),
-      routingPreference: travelMode === "DRIVING" || travelMode === "TWO_WHEELER" ? "TRAFFIC_AWARE" : undefined,
-      fields: ["path", "viewport"],
-    }).then(({ routes }) => {
-      if (routes?.[0]) {
-        const mainPolylines = routes[0].createPolylines();
-        mainPolylines.forEach((p: google.maps.Polyline) => {
-          const path = p.getPath();
-          const glowLine = new google.maps.Polyline({
-            path: path,
-            strokeColor: "#EF4444",
-            strokeWeight: 11,
-            strokeOpacity: 0.15,
-            map: map,
-            zIndex: 1
-          });
-          
-          p.setOptions({
-             strokeColor: "#EF4444",
-             strokeOpacity: 1,
-             strokeWeight: 7,
-             zIndex: 2,
-             map: map,
-             icons: [{
-                icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, fillOpacity: 1, scale: 2 },
-                offset: '100%',
-                repeat: '100px'
-             }]
-          });
-          
-          polylinesRef.current.push(glowLine, p);
-        });
-        
-        if (routes[0].viewport) map.fitBounds(routes[0].viewport);
-      }
-    }).catch(e => {
-       console.log("Route rendering failed:", e);
-       // Silent Fallback
-       fallbackLineRef.current = new google.maps.Polyline({
-          path: [
-            userLocation, 
-            selectedFacility.location
-          ],
-          strokeColor: "#EF4444",
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
-          icons: [{
-             icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 4 },
-             offset: "0",
-             repeat: "20px"
-          }],
-          map: map
-       });
-    });
-
-  }, [routesLib, map, selectedFacility, userLocation, coreLib, travelMode, isNavigating]);
 
   if (!userLocation) return null;
 
@@ -172,25 +155,62 @@ export default function MapView({ userLocation, facilities, selectedFacility, tr
       {facilities.map((fac: any, idx: number) => {
         const isSelected = selectedFacility?.id === fac.id;
         
-        let bg = "#F97316";
-        if (facilityType === "hospital") bg = "#EF4444";
-        else if (facilityType === "clinic") bg = "#3B82F6";
-        else if (facilityType === "pharmacy") bg = "#10B981";
+        const typeStr = facilityType || "hospital";
+        const icon = createSVGMarker(typeStr, isSelected);
 
-        const icon = createSVGMarker(bg);
-        if (isSelected) {
-            icon.scaledSize = new google.maps.Size(40, 50);
-            icon.anchor = new google.maps.Point(20, 50);
-        }
+        const isInfoWindowOpen = openInfoWindowId === fac.id;
 
         return (
-          <Marker 
-            key={fac.id || idx} 
-            position={fac.location} 
-            title={fac.displayName}
-            zIndex={isSelected ? 50 : 10}
-            icon={icon}
-          />
+          <div key={fac.id || idx}>
+            <Marker 
+              position={fac.location} 
+              title={fac.displayName}
+              zIndex={isSelected ? 50 : 10}
+              icon={icon}
+              onClick={() => {
+                if (setSelectedFacility) setSelectedFacility(fac);
+                setOpenInfoWindowId(fac.id);
+              }}
+            />
+            {isInfoWindowOpen && (
+              <InfoWindow 
+                position={fac.location}
+                onCloseClick={() => {
+                  setOpenInfoWindowId("CLOSED_" + fac.id);
+                }}
+                headerContent={null}
+              >
+                <div className="flex flex-col p-3 min-w-[240px] max-w-[280px]">
+                  <h3 className="font-serif italic text-lg text-slate-800 font-black leading-tight mb-1.5">{fac.displayName}</h3>
+                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed line-clamp-2 mb-4 pr-2">
+                    {fac.formattedAddress}
+                  </p>
+                  
+                  {fac.eta && fac.distance && (
+                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-sky-50 text-sky-700 border border-sky-100 font-bold px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest">
+                          {fac.eta} min
+                        </span>
+                        <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+                          {(fac.distance / 1000).toFixed(1)} km
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <a 
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fac.displayName + ' ' + fac.formattedAddress)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-center items-center gap-2 w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-xl shadow-md shadow-sky-600/20 text-[10px] uppercase tracking-widest transition-all active:scale-[0.98]"
+                  >
+                    Buka di Maps <span className="text-sm leading-none">↗</span>
+                  </a>
+                </div>
+              </InfoWindow>
+            )}
+          </div>
         );
       })}
     </>

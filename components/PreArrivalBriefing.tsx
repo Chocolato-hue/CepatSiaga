@@ -418,7 +418,7 @@ export default function PreArrivalBriefing({
 
   return (
     <>
-      <div className="bg-[#D8F8FF] border border-[#0082A6]/20 rounded-2xl shadow-sm p-6 text-slate-800 mt-6 animate-in fade-in duration-500">
+      <div className="bg-[#D8F8FF] border border-[#0082A6]/20 rounded-2xl shadow-sm p-6 text-slate-800 mt-6">
         <div className="mb-4">
           <h3 className="text-xl font-serif font-black uppercase tracking-widest text-black">
             {lang === "en" ? "Summary Medical Report" : "Ringkasan Laporan Medis"}

@@ -24,7 +24,10 @@ export default function AiChatbot({ lang, condition }: { lang: "id" | "en", cond
     return msgs;
   });
 
-  useEffect(() => {
+  const [prevLang, setPrevLang] = useState(lang);
+  
+  if (lang !== prevLang) {
+    setPrevLang(lang);
     setMessages((prev) => {
       const newMsgs = [...prev];
       const welcomeIdx = condition ? 1 : 0;
@@ -39,7 +42,7 @@ export default function AiChatbot({ lang, condition }: { lang: "id" | "en", cond
       }
       return newMsgs;
     });
-  }, [lang, condition]);
+  }
   
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);

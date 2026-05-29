@@ -21,13 +21,14 @@ export async function GET(req: NextRequest) {
     });
     
     if (!res.ok) {
-        throw new Error("Failed to fetch from Nominatim");
+        // Return a mock failure silently so the app uses lat/lng default
+        return NextResponse.json({ address: { city: null } });
     }
 
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Geocode error:", error);
-    return NextResponse.json({ error: "Failed to geocode" }, { status: 500 });
+    // Return empty address silently on exception (like rate limits)
+    return NextResponse.json({ address: { city: null } });
   }
 }

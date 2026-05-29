@@ -9,29 +9,37 @@ import SectionTracker from "@/components/SectionTracker";
 
 import { getTextSearchParams, isValidFacility } from "@/lib/places";
 import { t } from "@/lib/i18n";
-import EmergencyInput from "@/components/EmergencyInput";
+import HeroSection from "@/components/homepage/HeroSection";
+import EmergencyScopeSection from "@/components/homepage/EmergencyScopeSection";
+import UrgencySection from "@/components/homepage/UrgencySection";
+import ResearchSection from "@/components/homepage/ResearchSection";
+import FeaturesSection from "@/components/homepage/FeaturesSection";
+import FounderNote from "@/components/homepage/FounderNote";
+import CTAFooter from "@/components/homepage/CTAFooter";
 import ResponseTimer from "@/components/ResponseTimer";
 import FacilityList from "@/components/FacilityList";
 import FirstAidStepper from "@/components/FirstAidStepper";
 import PreArrivalBriefing from "@/components/PreArrivalBriefing";
 import MapView from "@/components/MapView";
-import LocationSearch from "@/components/LocationSearch";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import AmbulanceLoading from "@/components/AmbulanceLoading";
 import AiChatbot from "@/components/AiChatbot";
+import SosFirstAidStepper from "@/components/SosFirstAidStepper";
+
 import { MAP_STYLES } from "@/lib/mapStyles";
 
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || "";
 
 export default function Home() {
   const router = useRouter();
-  const [phase, setPhase] = useState<"INPUT" | "ANALYZING" | "CLARIFICATION" | "TRIAGING" | "RESULTS">("INPUT");
+  const [phase, setPhase] = useState<"INPUT" | "ANALYZING" | "CLARIFICATION" | "TRIAGING" | "RESULTS" | "OUT_OF_SCOPE">("INPUT");
   const [clarificationData, setClarificationData] = useState<{question: string, options: string[]} | null>(null);
   const [originalEmergencyText, setOriginalEmergencyText] = useState<string>("");
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [locationStatus, setLocationStatus] = useState<"loading" | "detected" | "denied">("loading");
+  const [locationStatus, setLocationStatus] = useState<"loading" | "detected" | "denied" | "ignored">("loading");
   const [cityName, setCityName] = useState<string | null>(null);
   const [triageData, setTriageData] = useState<any | null>(null);
+  const [isEmergencyMode, setIsEmergencyMode] = useState<boolean>(false);
   const [submissionTime, setSubmissionTime] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<"none" | "facilities" | "triage">("none");
   
@@ -43,6 +51,7 @@ export default function Home() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [selectedFacility, setSelectedFacility] = useState<any | null>(null);
   const [prefetchedPlaces, setPrefetchedPlaces] = useState<any[] | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
 
   // Use a ref so the effect doesn't get re-triggered unnecessarily
   const stopTimerTriggered = useRef(false);
@@ -81,6 +90,9 @@ export default function Home() {
   // Navigation tracking
   const [isNavigating, setIsNavigating] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  
+  // Pending user actions
+  const [queuedAction, setQueuedAction] = useState<{ type: "sos" | "submit", text?: string } | null>(null);
 
   const handleLocationSelect = useCallback((loc: { lat: number; lng: number }) => {
     setUserLocation(loc);
@@ -179,9 +191,9 @@ export default function Home() {
           setLocationStatus("denied");
         },
         {
-          enableHighAccuracy: true,
+          enableHighAccuracy: false,
           timeout: 10000,
-          maximumAge: 0
+          maximumAge: 300000
         }
       );
     } else if (!("geolocation" in navigator)) {
@@ -200,12 +212,28 @@ export default function Home() {
     setFinalTime(null);
     setOverrideType(null);
     setOriginalEmergencyText("");
+    setIsEmergencyMode(false);
+    setMobileView("list");
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSOS = () => {
     (window as any).appStartTime = Date.now();
     setSubmissionTime(new Date().toISOString());
+    setOriginalEmergencyText(lang === 'en' ? "SOS Panic Button Activated." : "Tombol Panik SOS Diaktifkan.");
+
+    if (!userLocation && locationStatus !== "ignored") {
+      if (locationStatus === "denied") {
+        alert(lang === "en"
+          ? "Location access is needed to find nearby emergency facilities."
+          : "Akses lokasi diperlukan untuk menemukan fasilitas darurat terdekat.");
+      } else {
+        setQueuedAction({ type: "sos" });
+        setPhase("ANALYZING"); // Show loading UI while waiting
+      }
+      return;
+    }
+
     setPhase("TRIAGING");
     setIsTimerRunning(true);
     setFinalTime(null);
@@ -213,39 +241,59 @@ export default function Home() {
     setSelectedFacility(null);
     setPrefetchedPlaces(null);
     setOverrideType(null);
-    setOriginalEmergencyText(lang === 'en' ? "SOS Panic Button Activated." : "Tombol Panik SOS Diaktifkan.");
-
-    if (!userLocation) {
-      alert(lang === "en"
-        ? "Location required for emergency routing."
-        : "Lokasi diperlukan untuk pencarian darurat.");
-      return;
-    }
-
-    const location = userLocation;
 
     const sosTriage = {
       needs_clarification: false,
       severity: "Critical",
       facility_type: "hospital",
-      reason: lang === 'en' ? "SOS Panic Button Activated." : "Tombol Panik SOS Diaktifkan.",
-      immediate_action: lang === 'en' ? "Head to the nearest ER immediately." : "Segera menuju IGD terdekat.",
-      first_aid_steps: [
-        lang === 'en' ? "Ensure the patient's airway is clear and check breathing." : "Pastikan jalan napas pasien terbuka dan cek pernapasan.",
-        lang === 'en' ? "If bleeding, apply firm direct pressure with a clean cloth." : "Jika ada pendarahan, tekan kuat area luka dengan kain bersih.",
-        lang === 'en' ? "Tell the ER doctor: Time of incident and what you found." : "Sampaikan ke dokter IGD: Waktu kejadian dan apa yang pertama kali ditemukan."
-      ],
-      do_not_do: [
-        lang === 'en' ? "Do not give any food or liquid to the patient." : "DILARANG memberikan makanan atau minuman kepada pasien."
-      ],
-      recommended_documents: ["KTP", "Kartu BPJS/Asuransi"]
+      reason: {
+        en: "SOS Panic Button Activated.",
+        id: "Tombol Panik SOS Diaktifkan."
+      },
+      immediate_action: {
+        en: "Head to the nearest ER immediately.",
+        id: "Segera menuju IGD terdekat."
+      },
+      first_aid_steps: {
+        en: [
+          "Stay calm — your calm helps the patient too. Take a breath, you can do this.",
+          "Check if they respond: tap their shoulder gently and call their name. Are they breathing?",
+          "If there is bleeding, press firmly on the wound with any clean cloth you have. Keep pressing — do not lift it.",
+          "Do not leave them alone. Stay close, talk to them, even if they seem unconscious.",
+          "When the doctor arrives, tell them: what happened, when it started, and what you noticed first."
+        ],
+        id: [
+          "Tetap tenang — ketenangan kamu membantu pasien juga. Tarik napas, kamu bisa lakukan ini.",
+          "Cek respons: tepuk bahunya pelan dan panggil namanya. Apakah ia bernapas?",
+          "Kalau ada pendarahan, tekan luka dengan kain bersih apapun yang ada. Terus tekan — jangan diangkat.",
+          "Jangan tinggalkan mereka sendirian. Tetap di sisi mereka, ajak bicara, meskipun tampak tidak sadar.",
+          "Saat dokter tiba, ceritakan: apa yang terjadi, kapan mulainya, dan apa yang pertama kali kamu lihat."
+        ]
+      },
+      do_not_do: {
+        en: [
+          "Do not give food or drink — even if they ask for it.",
+          "Do not move them unless they are in immediate danger (fire, traffic, water).",
+          "Do not panic out loud — it makes the situation harder for everyone."
+        ],
+        id: [
+          "Jangan beri makan atau minum — meskipun mereka meminta.",
+          "Jangan pindahkan mereka kecuali ada bahaya langsung (api, lalu lintas, air).",
+          "Jangan panik secara berlebihan di depan mereka — ini membuat situasi makin sulit."
+        ]
+      },
+      recommended_documents: {
+        en: ["ID Card", "Insurance/BPJS Card"],
+        id: ["KTP", "Kartu BPJS/Asuransi"]
+      }
     };
     setTriageData(sosTriage);
+    setIsEmergencyMode(true);
 
-    if (window.google?.maps) {
+    if (window.google?.maps && userLocation) {
       google.maps.importLibrary("places").then(async (lib) => {
         const { Place } = lib as google.maps.PlacesLibrary;
-        const searchParams = getTextSearchParams("hospital", location.lat, location.lng);
+        const searchParams = getTextSearchParams("hospital", userLocation.lat, userLocation.lng);
         
         try {
           const res = await Place.searchByText(searchParams).catch(() => ({ places: [] }));
@@ -315,6 +363,20 @@ export default function Home() {
   const handleEmergencySubmit = async (text: string) => {
     (window as any).appStartTime = Date.now();
     setSubmissionTime(new Date().toISOString());
+    setOriginalEmergencyText(text);
+
+    if (!userLocation && locationStatus !== "ignored") {
+      if (locationStatus === "denied") {
+        alert(lang === "en"
+          ? "Location access is needed to find nearby emergency facilities."
+          : "Akses lokasi diperlukan untuk menemukan fasilitas darurat terdekat.");
+      } else {
+        setQueuedAction({ type: "submit", text });
+        setPhase("ANALYZING"); // Show loading UI while waiting
+      }
+      return;
+    }
+
     setPhase("ANALYZING");
     setIsTimerRunning(true);
     setFinalTime(null);
@@ -322,14 +384,6 @@ export default function Home() {
     setSelectedFacility(null);
     setPrefetchedPlaces(null);
     setOverrideType(null);
-    setOriginalEmergencyText(text);
-
-    if (!userLocation) {
-      alert(lang === "en"
-        ? "Location required for emergency routing."
-        : "Lokasi diperlukan untuk pencarian darurat.");
-      return;
-    }
 
     const location = userLocation;
 
@@ -363,11 +417,11 @@ export default function Home() {
     // Try to pre-fetch places immediately assuming default 'hospital'
     let placesPromise = Promise.resolve<{places: any[]} | null>(null);
     
-    if (window.google?.maps) {
+    if (window.google?.maps && location) {
       try {
         const { Place } = await google.maps.importLibrary("places") as google.maps.PlacesLibrary;
         const searchParams = getTextSearchParams("hospital", location.lat, location.lng);
-        placesPromise = Place.searchByText(searchParams) as Promise<any>;
+        placesPromise = Place.searchByText(searchParams).catch(() => ({ places: [] })) as Promise<any>;
       } catch (e) {
         console.log("Pre-fetch places failed", e);
       }
@@ -375,6 +429,13 @@ export default function Home() {
 
     try {
       const [data, placesRes] = await Promise.all([triagePromise, placesPromise]);
+      
+      if (data.out_of_scope) {
+        setTriageData(data);
+        setPhase("OUT_OF_SCOPE");
+        setIsTimerRunning(false);
+        return;
+      }
       
       if (data.needs_clarification) {
         setClarificationData(data);
@@ -418,15 +479,52 @@ export default function Home() {
         needs_clarification: false,
         severity: "Moderate",
         facility_type: "hospital",
-        reason: lang === 'en' ? "System error. Seek nearest help immediately." : "Kesalahan sistem. Segera cari bantuan terdekat.",
-        immediate_action: lang === 'en' ? "Please get a ride to ER now." : "Harap cari tumpangan ke IGD sekarang.",
-        first_aid_steps: [lang === 'en' ? "Ensure airway is clear and breathing continues." : "Pastikan jalan napas bersih dan lanjutkan pernapasan.", lang === 'en' ? "Seek help to the nearest ER doctor." : "Berikan informasi spesifik ke IGD saat tiba."],
-        do_not_do: [],
-        recommended_documents: ["KTP", "Kartu BPJS/Asuransi"]
+        reason: {
+          en: "System error. Seek nearest help immediately.",
+          id: "Kesalahan sistem. Segera cari bantuan terdekat."
+        },
+        immediate_action: {
+          en: "Please get a ride to ER now.",
+          id: "Harap cari tumpangan ke IGD sekarang."
+        },
+        first_aid_steps: {
+          en: [
+            "Ensure airway is clear and breathing continues.",
+            "Seek help to the nearest ER doctor."
+          ],
+          id: [
+            "Pastikan jalan napas bersih dan lanjutkan pernapasan.",
+            "Berikan informasi spesifik ke IGD saat tiba."
+          ]
+        },
+        do_not_do: {
+          en: [],
+          id: []
+        },
+        recommended_documents: {
+          en: ["ID Card", "Insurance/BPJS Card"],
+          id: ["KTP", "Kartu BPJS/Asuransi"]
+        }
       });
       setPhase("TRIAGING");
     }
   };
+
+  useEffect(() => {
+    // Process queued action if location is now available
+    if (userLocation && queuedAction) {
+      const action = queuedAction;
+      setTimeout(() => {
+        setQueuedAction(null);
+        if (action.type === "sos") {
+          handleSOS();
+        } else if (action.type === "submit" && action.text) {
+          handleEmergencySubmit(action.text);
+        }
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation, queuedAction]);
 
   if (!GOOGLE_MAPS_KEY) {
     return (
@@ -447,30 +545,30 @@ export default function Home() {
       <main className="min-h-screen relative pb-20">
         
         {/* Header */}
-        <header className="absolute top-0 w-full px-10 py-6 z-10 flex justify-between items-center border-b border-black/10 bg-white/50 backdrop-blur-sm">
-          <div className="flex items-center gap-4">
+        <header className="fixed top-0 w-full px-6 md:px-10 py-4 z-50 flex justify-between items-center bg-white/72 backdrop-blur-xl border-b border-cyan-100/70 shadow-[0_4px_30px_rgba(255,255,255,0.35)] transition-all pointer-events-none">
+          <div className="flex items-center gap-3 md:gap-4 pointer-events-auto">
             <div className="flex flex-col cursor-pointer" onClick={resetToHome}>
-              <span className="text-3xl md:text-4xl font-serif italic font-black tracking-tighter text-black">CepatSiaga.</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-black/60">{lang === 'en' ? 'Emergency Smart Assist' : 'Asisten Darurat Pintar'}</span>
+              <span className="text-2xl md:text-4xl font-serif italic font-black tracking-tighter text-slate-800 drop-shadow-sm">CepatSiaga.</span>
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-slate-600">{lang === 'en' ? 'Emergency Smart Assist' : 'Asisten Darurat Pintar'}</span>
             </div>
             
             {phase !== "INPUT" && (
-              <button onClick={resetToHome} className="hidden md:flex ml-4 font-bold flex items-center gap-2 px-3 py-1.5 border border-black/20 text-black/60 rounded-full hover:bg-black/5 text-[10px] md:text-xs tracking-widest uppercase transition-colors">
+              <button onClick={resetToHome} className="hidden md:flex ml-4 font-bold items-center gap-2 px-3 py-1.5 text-slate-500 rounded-full hover:bg-black/5 hover:text-slate-800 text-[10px] md:text-xs tracking-widest uppercase transition-colors">
                 <HomeIcon className="w-3 h-3 md:w-4 md:h-4" /> {lang === 'en' ? 'Home' : 'Beranda'}
               </button>
             )}
             
-            <span className="h-6 w-[1px] bg-black/20 mx-2 hidden md:block"></span>
-            <div className="flex bg-black/5 rounded-full p-1 border border-black/10">
-              <button onClick={() => setLang("id")} className={`px-4 py-1 rounded-full text-xs font-bold transition-colors ${lang === 'id' ? 'bg-white shadow-sm' : 'text-black/40 hover:bg-black/5'}`}>ID</button>
-              <button onClick={() => setLang("en")} className={`px-4 py-1 rounded-full text-xs font-bold transition-colors ${lang === 'en' ? 'bg-white shadow-sm' : 'text-black/40 hover:bg-black/5'}`}>EN</button>
+            <span className="h-6 w-[1px] bg-slate-200 mx-1 md:mx-2 hidden md:block"></span>
+            <div className="flex bg-white/50 rounded-full p-1 border border-white/40 shadow-sm">
+              <button onClick={() => setLang("id")} className={`px-3 md:px-4 py-1 rounded-full text-[10px] md:text-xs font-bold transition-colors ${lang === 'id' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:bg-white/50'}`}>ID</button>
+              <button onClick={() => setLang("en")} className={`px-3 md:px-4 py-1 rounded-full text-[10px] md:text-xs font-bold transition-colors ${lang === 'en' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:bg-white/50'}`}>EN</button>
             </div>
           </div>
           
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-8 pointer-events-auto">
             <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest font-bold opacity-40">{lang === 'en' ? 'Current Location' : 'Lokasi Saat Ini'}</p>
-              <p className="text-sm font-medium flex items-center gap-1 justify-end">
+              <p className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-slate-400">{lang === 'en' ? 'Current Location' : 'Lokasi Saat Ini'}</p>
+              <p className="text-xs md:text-sm font-bold text-slate-700 flex items-center gap-1 justify-end">
                 {locationStatus === "loading" ? "📍 Mendeteksi lokasi..." : 
                  locationStatus === "denied" ? "📍 Lokasi tidak diaktifkan" : 
                  cityName ? `📍 ${cityName}` : "📍 Lokasi Terdeteksi"}
@@ -481,103 +579,30 @@ export default function Home() {
 
         {(phase === "INPUT") && (
           <div className="w-full flex flex-col">
-            {/* Hero Section - 100vh */}
-            <div className="min-h-screen flex items-center justify-center pt-20">
-              <EmergencyInput onSubmit={handleEmergencySubmit} onSOS={handleSOS} lang={lang} isAnalyzing={false} locationStatus={locationStatus} />
-            </div>
-            
-            {/* Landing Page Content - Horizontal Rows */}
-            <div className="max-w-5xl mx-auto px-6 flex flex-col w-full pb-32">
-              
-              {/* Row 1: The Urgent Reality */}
-              <motion.div 
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-100px" }}
-                transition={{ duration: 0.8 }}
-                className="w-full flex flex-col md:flex-row gap-12 items-center py-24 border-t border-black/10"
-              >
-                <div className="flex-1">
-                  <h3 className="font-serif italic font-black text-4xl md:text-5xl text-black leading-tight mb-6 tracking-tight">
-                    {t[lang].everySecondCounts}
-                  </h3>
-                  <p className="text-black/70 font-medium text-lg leading-relaxed mb-6">
-                    {t[lang].whoFact}
-                  </p>
-                  <div className="flex flex-col gap-2 mt-8 p-6 bg-[#D8F8FF] rounded-2xl border border-[#0082A6]/10">
-                     <span className="text-[10px] uppercase font-black tracking-widest text-[#0082A6]">{t[lang].didYouKnow}</span>
-                     <p className="font-serif italic text-xl font-bold text-[#0082A6]">
-                       {t[lang].goldenHour}
-                     </p>
-                  </div>
-                </div>
-                <div className="w-full md:w-1/3 aspect-square bg-[#0082A6] rounded-3xl p-8 flex flex-col items-center justify-center text-center gap-4 text-white hover:scale-105 transition-transform duration-500 shadow-xl shadow-[#0082A6]/20">
-                  <span className="text-7xl md:text-8xl font-black font-sans tracking-tighter">80<span className="text-5xl">%</span></span>
-                  <span className="text-sm font-bold uppercase tracking-widest opacity-90 leading-tight">
-                    {t[lang].statsDeath}
-                  </span>
-                </div>
-              </motion.div>
-
-              {/* Row 2: Features Layout */}
-              <motion.div 
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-100px" }}
-                transition={{ duration: 0.8 }}
-                className="w-full py-24 border-t border-black/10 flex flex-col gap-12"
-              >
-                {[
-                  {
-                    icon: "🚑",
-                    title: t[lang].aiTriage,
-                    desc: t[lang].aiTriageDesc
-                  },
-                  {
-                    icon: "🏥",
-                    title: t[lang].instantFirstAid,
-                    desc: t[lang].instantFirstAidDesc
-                  },
-                  {
-                    icon: "🚨",
-                    title: t[lang].panicButton,
-                    desc: t[lang].panicButtonDesc
-                  }
-                ].map((feature, idx) => (
-                  <div key={idx} className="flex flex-col md:flex-row gap-6 items-center md:items-start p-8 rounded-3xl bg-white border border-[#0082A6]/10 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-5xl md:text-6xl bg-[#D8F8FF] p-6 rounded-2xl flex-shrink-0">{feature.icon}</span>
-                    <div className="flex flex-col gap-3 text-center md:text-left mt-2 content-center md:content-start h-full justify-center">
-                      <h4 className="font-bold text-2xl text-[#0082A6] tracking-tight">{feature.title}</h4>
-                      <p className="text-black/60 text-lg leading-relaxed">{feature.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </motion.div>
-
-              {/* Row 3: CTA Section */}
-              <motion.div 
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.8 }}
-                className="text-center py-20 pb-32"
-              >
-                 <button 
-                   onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                   className="bg-[#0082A6] text-white px-10 py-5 rounded-full text-sm font-black tracking-widest hover:scale-105 hover:bg-[#006d8b] shadow-xl shadow-[#0082A6]/30 transition-all"
-                 >
-                   {t[lang].startAi}
-                 </button>
-              </motion.div>
-
-            </div>
+            <HeroSection 
+              onSubmit={handleEmergencySubmit} 
+              onSOS={handleSOS} 
+              lang={lang} 
+              locationStatus={locationStatus} 
+              onLocationUpdate={(loc) => { setUserLocation(loc); setCityName(null); setLocationStatus("detected"); }}
+              onContinueWithoutLocation={() => {
+                setLocationStatus("ignored");
+                // Immediately call queued action if any, or trigger submit
+                if (queuedAction?.type === "sos") setTimeout(handleSOS, 0);
+                else if (queuedAction?.type === "submit" && queuedAction.text) setTimeout(() => handleEmergencySubmit(queuedAction.text!), 0);
+              }}
+            />
+            <EmergencyScopeSection lang={lang} />
+            <UrgencySection lang={lang} />
+            <ResearchSection lang={lang} />
+            <FeaturesSection lang={lang} />
+            <FounderNote lang={lang} />
+            <CTAFooter lang={lang} />
           </div>
         )}
         
         {phase === "ANALYZING" && (
-          <div className="pt-32 px-4 max-w-2xl mx-auto flex flex-col gap-6 animate-in fade-in duration-500">
-            <AmbulanceLoading lang={lang} />
-          </div>
+          <AmbulanceLoading lang={lang} />
         )}
 
         {phase === "CLARIFICATION" && clarificationData && (
@@ -633,9 +658,41 @@ export default function Home() {
           </div>
         )}
 
+        {phase === "OUT_OF_SCOPE" && triageData?.out_of_scope_message && (
+          <div className="flex-1 w-full bg-[#E8ECE6] flex flex-col items-center pt-32 px-6">
+            <div className="bg-white p-8 rounded-3xl max-w-lg w-full shadow-[0_20px_60px_rgba(10,22,40,0.08)] border border-[#0A1628]/10 flex flex-col items-center text-center">
+              <span className="text-4xl mb-4">⚠️</span>
+              <h2 className="text-xl font-bold font-serif italic text-slate-800 mb-2">
+                {lang === 'en' ? 'Non-Emergency Context' : 'Bukan Konteks Darurat'}
+              </h2>
+              <p className="text-slate-600 mb-8 leading-relaxed">
+                {triageData.out_of_scope_message?.[lang] || triageData.out_of_scope_message}
+              </p>
+              <button
+                onClick={resetToHome}
+                className="w-full bg-[#0A1628] rounded-xl text-[#F8F4EF] font-bold uppercase tracking-widest py-4 hover:bg-[#1C2B3A] shadow-md transition-colors text-sm"
+              >
+                {lang === 'en' ? 'Back to Home' : 'Kembali ke Beranda'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {phase === "TRIAGING" && !triageData && <LoadingOverlay />}
 
-        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && (
+        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && isEmergencyMode && (
+          <div className="flex flex-col min-h-screen w-full bg-[#E8ECE6] pt-16 px-4 md:px-0 pb-20 overflow-hidden">
+             <div className="max-w-3xl mx-auto w-full min-h-[85vh] bg-white rounded-3xl shadow-xl p-6 md:p-10 flex flex-col mt-4">
+                 <SosFirstAidStepper 
+                    lang={lang} 
+                    documents={triageData?.recommended_documents?.[lang]} 
+                    onHome={() => setIsEmergencyMode(false)} 
+                 />
+             </div>
+          </div>
+        )}
+
+        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && !isEmergencyMode && (
           <div className="flex flex-col min-h-screen w-full bg-[#E8ECE6] pt-20 relative">
              <SectionTracker />
              
@@ -676,9 +733,10 @@ export default function Home() {
                {/* Section 1: First Aid Hub (Split Two-Column on Desktop) */}
                <motion.section 
                  id="action" 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
+                 initial={{ opacity: 0, y: 30, filter: "blur(8px)" }}
+                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                  className="flex flex-col lg:flex-row gap-6 scroll-mt-32 w-full"
                >
                   {/* Left Column: Info Darurat */}
@@ -725,9 +783,10 @@ export default function Home() {
 
                {/* Linear Scroll Separator 1 */}
                <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
+                 initial={{ opacity: 0, y: 30, filter: "blur(5px)" }}
+                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                  className="flex flex-col items-center justify-center py-8 opacity-80"
                >
                   <p className="text-center font-bold text-slate-500 uppercase tracking-widest text-sm max-w-2xl">
@@ -739,20 +798,39 @@ export default function Home() {
                {/* Section 2: Nearest Facilities Maps */}
                <motion.section 
                  id="facilities" 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
+                 initial={{ opacity: 0, y: 30, filter: "blur(8px)" }}
+                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                  className="flex flex-col gap-6 scroll-mt-32 w-full"
                >
                  <div className="bg-white border border-black/10 rounded-2xl shadow-sm p-4 md:p-6 flex flex-col gap-4">
-                   <h3 className="text-xl md:text-2xl font-serif italic font-black tracking-tight text-black mb-4 border-b border-black/10 pb-4">
-                     {t[lang].nearestFacilities}
-                   </h3>
+                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-black/10 pb-4 mb-4">
+                     <h3 className="text-xl md:text-2xl font-serif italic font-black tracking-tight text-black">
+                       {t[lang].nearestFacilities}
+                     </h3>
+                     
+                     {/* Mobile View Toggle */}
+                     <div className="flex lg:hidden bg-slate-100 rounded-xl p-1 w-full sm:w-auto">
+                       <button 
+                         onClick={() => setMobileView("list")}
+                         className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-colors ${mobileView === "list" ? "bg-white text-black shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                       >
+                         {lang === 'en' ? "List View" : "Daftar"}
+                       </button>
+                       <button 
+                         onClick={() => setMobileView("map")}
+                         className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-colors ${mobileView === "map" ? "bg-white text-black shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                       >
+                         {lang === 'en' ? "Map View" : "Peta"}
+                       </button>
+                     </div>
+                   </div>
                     
                    <div className="flex flex-col lg:flex-row gap-6 w-full">
                      {/* Left side: List */}
-                     <div id="facility-cards-section" className="w-full lg:w-[40%] flex flex-col gap-4 h-[400px] lg:h-[600px] overflow-y-auto pr-2">
-                       {userLocation && (
+                     <div id="facility-cards-section" className={`w-full lg:w-[40%] flex-col h-[400px] lg:h-[600px] pr-1 ${mobileView === "list" ? "flex" : "hidden lg:flex"}`}>
+                       {userLocation ? (
                          <FacilityList
                            triageData={triageData} 
                            userLocation={userLocation}
@@ -767,11 +845,18 @@ export default function Home() {
                            overrideType={overrideType}
                            setOverrideType={setOverrideType}
                          />
+                       ) : (
+                         <div className="flex bg-[#F8F4EF] rounded-xl p-8 items-center justify-center h-full text-center border border-[#0A1628]/10 shadow-[inner_0px_4px_10px_rgba(0,0,0,0.02)] flex-col gap-4">
+                            <span className="text-4xl text-slate-300">📴</span>
+                            <p className="text-slate-600 font-medium max-w-sm">
+                              {lang === 'en' ? 'Nearby emergency facilities unavailable because location access was not granted.' : 'Fasilitas darurat terdekat tidak tersedia karena akses lokasi tidak diberikan.'}
+                            </p>
+                         </div>
                        )}
                      </div>
 
                      {/* Right side: Map */}
-                     <div className="w-full lg:w-[60%] relative rounded-2xl overflow-hidden border border-[#0082A6]/20 h-[400px] lg:h-[600px]">
+                     <div className={`w-full lg:w-[60%] relative rounded-2xl overflow-hidden border border-[#0082A6]/20 h-[400px] lg:h-[600px] ${mobileView === "map" ? "block" : "hidden lg:block"}`}>
                         {/* Control Panel Layer */}
                         <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 items-start">
                           <div className="flex bg-white/90 backdrop-blur-sm rounded-xl p-1 shadow-sm border border-slate-200">
@@ -783,17 +868,20 @@ export default function Home() {
 
                         {/* Map View Context */}
                         <div className="w-full h-full bg-slate-100 relative">
-                          {!facilities.length && (
+                          {!userLocation ? (
+                            <div className="absolute inset-0 z-0 bg-[#F8F4EF] flex items-center justify-center p-8 text-center text-slate-500 font-medium">
+                               {lang === 'en' ? 'Map view is unavailable without location access.' : 'Tampilan peta tidak tersedia tanpa akses lokasi.'}
+                            </div>
+                          ) : !facilities.length ? (
                             <div className="absolute inset-0 z-0 bg-slate-100 animate-pulse flex items-center justify-center">
                               <div className="w-8 h-8 border-4 border-[#0082A6] border-t-transparent rounded-full animate-spin"></div>
                             </div>
-                          )}
-                          {!userLocation ? null : (
+                          ) : (
                           <Map
                             center={userLocation || undefined}
                             defaultZoom={14}
                             zoomControl={false}
-                            mapId="DEMO_MAP_ID"
+                            mapId="2c793709f64f0dcb968f2b27"
                             disableDefaultUI
                             colorScheme="LIGHT"
                             styles={MAP_STYLES}
@@ -831,9 +919,10 @@ export default function Home() {
 
                {/* Linear Scroll Separator 2 */}
                <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
+                 initial={{ opacity: 0, y: 30, filter: "blur(5px)" }}
+                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                  className="flex flex-col items-center justify-center py-8 opacity-80"
                >
                   <p className="text-center font-bold text-slate-500 uppercase tracking-widest text-sm max-w-2xl">
@@ -845,9 +934,10 @@ export default function Home() {
                {/* Section 3: Summary Generator */}
                <motion.section 
                  id="triage" 
-                 initial={{ opacity: 0, y: 20 }}
-                 whileInView={{ opacity: 1, y: 0 }}
-                 viewport={{ once: true }}
+                 initial={{ opacity: 0, y: 30, filter: "blur(8px)" }}
+                 whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                 viewport={{ once: true, margin: "-100px" }}
+                 transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                  className="flex flex-col gap-6 w-full"
                >
                  <PreArrivalBriefing 

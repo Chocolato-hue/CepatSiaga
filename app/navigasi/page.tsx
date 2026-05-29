@@ -236,9 +236,11 @@ function NavigasiContent() {
                 >
                   <div className="font-bold text-black text-xs line-clamp-1 mb-1.5 group-hover:text-blue-600 transition-colors">{alt.name}</div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest bg-black/5 px-2 py-0.5 text-black/60">
-                      {alt.eta ? `${alt.eta} MIN` : 'N/A'}
-                    </span>
+                    {alt.eta && (
+                      <span className="text-[10px] font-bold uppercase tracking-widest bg-black/5 px-2 py-0.5 text-black/60">
+                        {alt.eta} MIN
+                      </span>
+                    )}
                     <span className="text-[9px] font-bold uppercase tracking-widest text-[#2563EB]">↗</span>
                   </div>
                 </button>
@@ -275,7 +277,7 @@ function NavigasiContent() {
           defaultCenter={userLoc}
           defaultZoom={16}
           zoomControl={false}
-          mapId="DEMO_MAP_ID"
+          mapId="2c793709f64f0dcb968f2b27"
           disableDefaultUI
           colorScheme="LIGHT"
           styles={MAP_STYLES}
@@ -293,12 +295,10 @@ function NavigasiContent() {
   );
 }
 
-function NavigationMapView({ userLoc, targetLoc, tMode, targetName, etaMinutes }: any) {
+function NavigationMapView({ userLoc, targetLoc, targetName, etaMinutes }: any) {
   const map = useMap();
-  const routesLib = useMapsLibrary("routes");
-  const coreLib = useMapsLibrary("core");
   const geometryLib = useMapsLibrary("geometry");
-  const polylinesRef = useRef<any[]>([]);
+  const coreLib = useMapsLibrary("core");
   const prevLocRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
@@ -322,53 +322,8 @@ function NavigationMapView({ userLoc, targetLoc, tMode, targetName, etaMinutes }
     }
   }, [userLoc, map, geometryLib, coreLib]);
 
-  useEffect(() => {
-    if (!map || !routesLib || !targetLoc || !userLoc || !coreLib) return;
-
-    polylinesRef.current.forEach(p => p.setMap(null));
-    polylinesRef.current = [];
-
-    routesLib.Route.computeRoutes({
-      origin: { lat: userLoc.lat, lng: userLoc.lng },
-      destination: { lat: targetLoc.lat, lng: targetLoc.lng },
-      travelMode: tMode === "TWO_WHEELER" ? "DRIVING" : (tMode as any),
-      fields: ["path"],
-    }).then(({ routes }) => {
-      if (routes?.[0]) {
-        const strokeColor = "#10B981"; // Green for active navigation
-        const mainPolylines = routes[0].createPolylines();
-        
-        mainPolylines.forEach((p: google.maps.Polyline) => {
-          const path = p.getPath();
-          
-          const glowLine = new google.maps.Polyline({
-            path: path,
-            strokeColor: strokeColor,
-            strokeWeight: 12,
-            strokeOpacity: 0.2,
-            map: map,
-            zIndex: 1
-          });
-          
-          p.setOptions({
-            strokeColor: strokeColor,
-            strokeOpacity: 1,
-            strokeWeight: 6,
-            zIndex: 2,
-            map: map
-          });
-
-          polylinesRef.current.push(glowLine, p);
-        });
-      }
-    }).catch(e => console.log("Nav route err:", e));
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetLoc, routesLib, map, coreLib, tMode]); // userLoc removed to avoid redraw on every step
-
   return (
     <>
-      {/* Floating Indicator */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-[#10B981] text-white px-4 py-3 rounded-full shadow-lg border border-black/10 animate-in slide-in-from-top-4 duration-500">
         <Navigation className="w-4 h-4 fill-white animate-pulse" />
         <span className="text-xs font-bold">{targetName} ({etaMinutes} min)</span>

@@ -120,7 +120,7 @@ export default function FirstAidStepper({ steps, documents = [], lang, onHome }:
           </button>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center animate-in zoom-in-95 fade-in duration-500 py-6">
+        <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-700 slide-in-from-bottom-4 py-6">
           <div className="w-20 h-20 bg-[#10B981]/10 text-[#10B981] rounded-full flex items-center justify-center mb-6">
             <CheckCircle2 className="w-10 h-10" />
           </div>
