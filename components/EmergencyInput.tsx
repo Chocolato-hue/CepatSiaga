@@ -7,7 +7,7 @@ import { motion } from "motion/react";
 
 export default function EmergencyInput({
   onSubmit,
-  onSOS,
+  onQuickAssessment,
   lang,
   isAnalyzing = false,
   locationStatus = "detected",
@@ -16,7 +16,7 @@ export default function EmergencyInput({
   dark = false,
 }: {
   onSubmit: (text: string) => void;
-  onSOS: () => void;
+  onQuickAssessment: () => void;
   lang: "id" | "en";
   isAnalyzing?: boolean;
   locationStatus?: string;
@@ -263,11 +263,11 @@ export default function EmergencyInput({
           >
             <button
               type="button"
-              onClick={onSOS}
+              onClick={onQuickAssessment}
               className="rounded-full px-6 py-3 font-bold shadow-sm transition-all active:scale-95 text-xs tracking-widest uppercase flex items-center gap-2 group hidden md:flex border bg-red-50 hover:bg-red-100 text-red-600 border-red-200"
             >
               <AlertTriangle className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              {lang === "en" ? "SOS Panic" : "SOS Panik"}
+              {lang === "en" ? "Quick Assessment" : "Cek Kondisi Darurat"}
             </button>
 
             <button
@@ -291,10 +291,10 @@ export default function EmergencyInput({
         </form>
       </div>
 
-      {/* Mobile SOS */}
+      {/* Mobile Quick Assessment */}
       <button
         type="button"
-        onClick={onSOS}
+        onClick={onQuickAssessment}
         className={`mt-6 w-full max-w-[200px] rounded-full px-6 py-3 font-bold shadow-sm active:scale-95 text-xs tracking-widest uppercase flex items-center justify-center gap-2 md:hidden border ${
           dark
             ? "bg-red-500/15 text-red-300 border-red-500/30"
@@ -302,7 +302,7 @@ export default function EmergencyInput({
         }`}
       >
         <AlertTriangle className="w-4 h-4" />
-        {lang === "en" ? "SOS Panic" : "SOS Panik"}
+        {lang === "en" ? "Quick Assessment" : "Cek Kondisi Darurat"}
       </button>
     </motion.div>
   );

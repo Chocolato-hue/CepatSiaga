@@ -6,14 +6,14 @@ import { motion, useScroll, useTransform } from "motion/react";
 
 interface Props {
   onSubmit: (text: string) => void;
-  onSOS: () => void;
+  onQuickAssessment: () => void;
   lang: "en" | "id";
   locationStatus: "loading" | "detected" | "denied" | "ignored" | string;
   onLocationUpdate?: (loc: {lat: number, lng: number}) => void;
   onContinueWithoutLocation?: () => void;
 }
 
-export default function HeroSection({ onSubmit, onSOS, lang, locationStatus, onLocationUpdate, onContinueWithoutLocation }: Props) {
+export default function HeroSection({ onSubmit, onQuickAssessment, lang, locationStatus, onLocationUpdate, onContinueWithoutLocation }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 500], [0, 150]);
@@ -160,7 +160,7 @@ export default function HeroSection({ onSubmit, onSOS, lang, locationStatus, onL
       >
         <EmergencyInput
           onSubmit={onSubmit}
-          onSOS={onSOS}
+          onQuickAssessment={onQuickAssessment}
           lang={lang}
           isAnalyzing={false}
           locationStatus={locationStatus}

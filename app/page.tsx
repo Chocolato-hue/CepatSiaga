@@ -20,11 +20,11 @@ import ResponseTimer from "@/components/ResponseTimer";
 import FacilityList from "@/components/FacilityList";
 import FirstAidStepper from "@/components/FirstAidStepper";
 import PreArrivalBriefing from "@/components/PreArrivalBriefing";
+import QuickAssessmentFlow from "@/components/QuickAssessmentFlow";
 import MapView from "@/components/MapView";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import AmbulanceLoading from "@/components/AmbulanceLoading";
 import AiChatbot from "@/components/AiChatbot";
-import SosFirstAidStepper from "@/components/SosFirstAidStepper";
 
 import { MAP_STYLES } from "@/lib/mapStyles";
 
@@ -32,7 +32,7 @@ const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || "";
 
 export default function Home() {
   const router = useRouter();
-  const [phase, setPhase] = useState<"INPUT" | "ANALYZING" | "CLARIFICATION" | "TRIAGING" | "RESULTS" | "OUT_OF_SCOPE">("INPUT");
+  const [phase, setPhase] = useState<"INPUT" | "QUICK_ASSESSMENT" | "ANALYZING" | "CLARIFICATION" | "TRIAGING" | "RESULTS" | "OUT_OF_SCOPE">("INPUT");
   const [clarificationData, setClarificationData] = useState<{question: string, options: string[]} | null>(null);
   const [originalEmergencyText, setOriginalEmergencyText] = useState<string>("");
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -99,6 +99,15 @@ export default function Home() {
     setSelectedFacility(null);
     setPrefetchedPlaces(null);
   }, []);
+
+  const scrollToFacilities = () => {
+  document
+    .getElementById("facilities")
+    ?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+};
 
   // Restore State on Mount
   useEffect(() => {
@@ -217,117 +226,8 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSOS = () => {
-    (window as any).appStartTime = Date.now();
-    setSubmissionTime(new Date().toISOString());
-    setOriginalEmergencyText(lang === 'en' ? "SOS Panic Button Activated." : "Tombol Panik SOS Diaktifkan.");
-
-    if (!userLocation && locationStatus !== "ignored") {
-      if (locationStatus === "denied") {
-        alert(lang === "en"
-          ? "Location access is needed to find nearby emergency facilities."
-          : "Akses lokasi diperlukan untuk menemukan fasilitas darurat terdekat.");
-      } else {
-        setQueuedAction({ type: "sos" });
-        setPhase("ANALYZING"); // Show loading UI while waiting
-      }
-      return;
-    }
-
-    setPhase("TRIAGING");
-    setIsTimerRunning(true);
-    setFinalTime(null);
-    setFacilities([]);
-    setSelectedFacility(null);
-    setPrefetchedPlaces(null);
-    setOverrideType(null);
-
-    const sosTriage = {
-      needs_clarification: false,
-      severity: "Critical",
-      facility_type: "hospital",
-      reason: {
-        en: "SOS Panic Button Activated.",
-        id: "Tombol Panik SOS Diaktifkan."
-      },
-      immediate_action: {
-        en: "Head to the nearest ER immediately.",
-        id: "Segera menuju IGD terdekat."
-      },
-      first_aid_steps: {
-        en: [
-          "Stay calm — your calm helps the patient too. Take a breath, you can do this.",
-          "Check if they respond: tap their shoulder gently and call their name. Are they breathing?",
-          "If there is bleeding, press firmly on the wound with any clean cloth you have. Keep pressing — do not lift it.",
-          "Do not leave them alone. Stay close, talk to them, even if they seem unconscious.",
-          "When the doctor arrives, tell them: what happened, when it started, and what you noticed first."
-        ],
-        id: [
-          "Tetap tenang — ketenangan kamu membantu pasien juga. Tarik napas, kamu bisa lakukan ini.",
-          "Cek respons: tepuk bahunya pelan dan panggil namanya. Apakah ia bernapas?",
-          "Kalau ada pendarahan, tekan luka dengan kain bersih apapun yang ada. Terus tekan — jangan diangkat.",
-          "Jangan tinggalkan mereka sendirian. Tetap di sisi mereka, ajak bicara, meskipun tampak tidak sadar.",
-          "Saat dokter tiba, ceritakan: apa yang terjadi, kapan mulainya, dan apa yang pertama kali kamu lihat."
-        ]
-      },
-      do_not_do: {
-        en: [
-          "Do not give food or drink — even if they ask for it.",
-          "Do not move them unless they are in immediate danger (fire, traffic, water).",
-          "Do not panic out loud — it makes the situation harder for everyone."
-        ],
-        id: [
-          "Jangan beri makan atau minum — meskipun mereka meminta.",
-          "Jangan pindahkan mereka kecuali ada bahaya langsung (api, lalu lintas, air).",
-          "Jangan panik secara berlebihan di depan mereka — ini membuat situasi makin sulit."
-        ]
-      },
-      recommended_documents: {
-        en: ["ID Card", "Insurance/BPJS Card"],
-        id: ["KTP", "Kartu BPJS/Asuransi"]
-      }
-    };
-    setTriageData(sosTriage);
-    setIsEmergencyMode(true);
-
-    if (window.google?.maps && userLocation) {
-      google.maps.importLibrary("places").then(async (lib) => {
-        const { Place } = lib as google.maps.PlacesLibrary;
-        const searchParams = getTextSearchParams("hospital", userLocation.lat, userLocation.lng);
-        
-        try {
-          const res = await Place.searchByText(searchParams).catch(() => ({ places: [] }));
-          
-          let combinedPlaces = [...((res as any).places || [])];
-
-          if (combinedPlaces.length > 0) {
-            const seen = new Set();
-            const seenCoords = new Set();
-            const unique = combinedPlaces.filter((p: any) => {
-              if (!isValidFacility(p, "hospital")) return false;
-              
-              if (p.location) {
-                const lat = typeof p.location.lat === 'function' ? p.location.lat() : p.location.lat;
-                const lng = typeof p.location.lng === 'function' ? p.location.lng() : p.location.lng;
-                if (lat != null && lng != null) {
-                  const coordKey = `${lat.toFixed(5)},${lng.toFixed(5)}`;
-                  if (seenCoords.has(coordKey)) return false;
-                  seenCoords.add(coordKey);
-                }
-              }
-
-              if (!p.formattedAddress) return false;
-              if (seen.has(p.formattedAddress)) return false;
-              seen.add(p.formattedAddress);
-              return true;
-            }).slice(0, 10);
-            setPrefetchedPlaces(unique);
-          }
-        } catch(err) {
-            console.log("SOS prefetch failed", err);
-        }
-      });
-    }
+  const handleQuickAssessment = () => {
+    setPhase("QUICK_ASSESSMENT");
   };
 
   const startNavigation = () => {
@@ -517,7 +417,7 @@ export default function Home() {
       setTimeout(() => {
         setQueuedAction(null);
         if (action.type === "sos") {
-          handleSOS();
+          handleQuickAssessment();
         } else if (action.type === "submit" && action.text) {
           handleEmergencySubmit(action.text);
         }
@@ -552,7 +452,7 @@ export default function Home() {
               <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-slate-600">{lang === 'en' ? 'Emergency Smart Assist' : 'Asisten Darurat Pintar'}</span>
             </div>
             
-            {phase !== "INPUT" && (
+            {(phase !== "INPUT" && phase !== "QUICK_ASSESSMENT") && (
               <button onClick={resetToHome} className="hidden md:flex ml-4 font-bold items-center gap-2 px-3 py-1.5 text-slate-500 rounded-full hover:bg-black/5 hover:text-slate-800 text-[10px] md:text-xs tracking-widest uppercase transition-colors">
                 <HomeIcon className="w-3 h-3 md:w-4 md:h-4" /> {lang === 'en' ? 'Home' : 'Beranda'}
               </button>
@@ -579,16 +479,16 @@ export default function Home() {
 
         {(phase === "INPUT") && (
           <div className="w-full flex flex-col">
-            <HeroSection 
+              <HeroSection 
               onSubmit={handleEmergencySubmit} 
-              onSOS={handleSOS} 
+              onQuickAssessment={handleQuickAssessment} 
               lang={lang} 
               locationStatus={locationStatus} 
               onLocationUpdate={(loc) => { setUserLocation(loc); setCityName(null); setLocationStatus("detected"); }}
               onContinueWithoutLocation={() => {
                 setLocationStatus("ignored");
                 // Immediately call queued action if any, or trigger submit
-                if (queuedAction?.type === "sos") setTimeout(handleSOS, 0);
+                if (queuedAction?.type === "sos") setTimeout(handleQuickAssessment, 0);
                 else if (queuedAction?.type === "submit" && queuedAction.text) setTimeout(() => handleEmergencySubmit(queuedAction.text!), 0);
               }}
             />
@@ -599,6 +499,14 @@ export default function Home() {
             <FounderNote lang={lang} />
             <CTAFooter lang={lang} />
           </div>
+        )}
+
+        {phase === "QUICK_ASSESSMENT" && (
+          <QuickAssessmentFlow
+             lang={lang}
+             onCancel={resetToHome}
+             onComplete={(data) => handleEmergencySubmit(data)}
+          />
         )}
         
         {phase === "ANALYZING" && (
@@ -680,19 +588,7 @@ export default function Home() {
 
         {phase === "TRIAGING" && !triageData && <LoadingOverlay />}
 
-        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && isEmergencyMode && (
-          <div className="flex flex-col min-h-screen w-full bg-[#E8ECE6] pt-16 px-4 md:px-0 pb-20 overflow-hidden">
-             <div className="max-w-3xl mx-auto w-full min-h-[85vh] bg-white rounded-3xl shadow-xl p-6 md:p-10 flex flex-col mt-4">
-                 <SosFirstAidStepper 
-                    lang={lang} 
-                    documents={triageData?.recommended_documents?.[lang]} 
-                    onHome={() => setIsEmergencyMode(false)} 
-                 />
-             </div>
-          </div>
-        )}
-
-        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && !isEmergencyMode && (
+        {(phase === "TRIAGING" || phase === "RESULTS") && triageData && (
           <div className="flex flex-col min-h-screen w-full bg-[#E8ECE6] pt-20 relative">
              <SectionTracker />
              
@@ -772,12 +668,17 @@ export default function Home() {
                      <h3 className="text-xl md:text-2xl font-serif italic font-black tracking-tight text-black mb-2 border-b border-black/10 pb-4 text-center">
                        {t[lang].firstAidGuide}
                      </h3>
-                     <FirstAidStepper 
-                        steps={(triageData.first_aid_steps?.[lang] || triageData.first_aid_steps || []).map((step: string) => step.replace(/dongak/gi, "tengadahkan kepala"))}
-                        documents={triageData.recommended_documents?.[lang] || triageData.recommended_documents}
-                        lang={lang} 
-                        onHome={resetToHome}
-                     />
+                    <FirstAidStepper
+                      steps={(triageData.first_aid_steps?.[lang] || triageData.first_aid_steps || []).map(
+                        (step: string) => step.replace(/dongak/gi, "tengadahkan kepala")
+                      )}
+                      documents={
+                        triageData.recommended_documents?.[lang] ||
+                        triageData.recommended_documents
+                      }
+                      lang={lang}
+                      onHome={resetToHome}
+                    />
                   </div>
                </motion.section>
 
